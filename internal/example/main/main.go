@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/envoyproxy/go-control-plane/internal/example"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
@@ -47,10 +48,12 @@ func main() {
 	flag.Parse()
 
 	// Create a cache
-	cache := cache.NewSnapshotCache(false, cache.IDHash{}, l)
+	cache := cache.NewSnapshotCache(true, cache.IDHash{}, l)
+
+	fetchTimeout := time.Second
 
 	// Create the snapshot that we'll serve to Envoy
-	snapshot := example.GenerateSnapshot()
+	snapshot := example.GenerateSnapshot(fetchTimeout)
 	if err := snapshot.Consistent(); err != nil {
 		l.Errorf("snapshot inconsistency: %+v\n%+v", snapshot, err)
 		os.Exit(1)
@@ -67,5 +70,28 @@ func main() {
 	ctx := context.Background()
 	cb := &test.Callbacks{Debug: l.Debug}
 	srv := server.NewServer(ctx, cache, cb)
-	example.RunServer(srv, port)
+	go func() {
+		example.RunServer(srv, port)
+	}()
+
+	// Let Envoy fully initialize
+	time.Sleep(30 * time.Second)
+
+	fetchTimeout += time.Second
+	l.Debugf("setting fetch timeout %+v", fetchTimeout)
+
+	// Update the SDS fetch timeout
+	snapshot = example.GenerateSnapshot(fetchTimeout)
+	if err := snapshot.Consistent(); err != nil {
+		l.Errorf("snapshot inconsistency: %+v\n%+v", snapshot, err)
+		os.Exit(1)
+	}
+	l.Debugf("will serve snapshot %+v", snapshot)
+
+	if err := cache.SetSnapshot(context.Background(), nodeID, snapshot); err != nil {
+		l.Errorf("snapshot error %q for %+v", err, snapshot)
+		os.Exit(1)
+	}
+
+	time.Sleep(time.Hour)
 }

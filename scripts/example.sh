@@ -12,7 +12,7 @@ set -o pipefail
 ENVOY=${ENVOY:-/usr/local/bin/envoy}
 
 # Start envoy: important to keep drain time short
-(${ENVOY} -c sample/bootstrap-xds.yaml --drain-time-s 1 -l debug)&
+(${ENVOY} -c sample/bootstrap-delta-ads.yaml --drain-time-s 1 -l debug 2>envoy-log.txt)&
 ENVOY_PID=$!
 
 function cleanup() {
@@ -21,4 +21,4 @@ function cleanup() {
 trap cleanup EXIT
 
 # Run the control plane
-bin/example -debug $@
+bin/example -debug $@ 2>xds-server-log.txt
